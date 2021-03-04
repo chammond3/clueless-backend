@@ -1,0 +1,59 @@
+const express = require("express");
+const http = require("http");
+const socketIO = require("socket.io");
+
+// Connection string of MongoDb database hosted on Mlab or locally
+var connection_string = "**********";
+// will use db once we have mLab setup
+//const db = require("monk")(connection_string);
+
+
+// password is "admin"
+const mongoose = require('mongoose')
+const {MONGOURI} = require('./keys')
+
+mongoose.connect(MONGOURI, {
+  useNewUrlParser:true,
+  useUnifiedTopology: true
+})
+
+mongoose.connection.on('connected',()=>{
+  console.log("Successfully connected to MongoDB!")
+})
+
+mongoose.connection.on('error',(err)=>{
+  console.log("Error connecting to MongoDB",err)
+})
+
+
+const app = express();
+const server = http.createServer(app);
+const io = socketIO(server);
+
+const router = require('./router/router');
+
+// serve static build files to clients
+app.use(router);
+// our server instance
+
+// This creates our socket using the instance of the server
+
+io.on("connection", socket => {
+  console.log("New client connected" + socket.id);
+  // initial data can be used to send state to new clients - doesn't do anything yet because we don't save state on the server
+  socket.on("initial_data", (msg) => {
+    console.log("testing 1, 2, 3");
+    console.log('message' + msg);
+    });
+  // start_game is called when button is pressed
+  socket.on("change_game_state", (started) => {
+      console.log("change_game_state");
+      io.sockets.emit("get_data", started);
+  });
+});
+
+// our localhost port - I think we need an env file to deploy
+const port = process.env.PORT || 3001;
+
+// setup listener on port 3001
+server.listen(port, () => console.log(`Listening on port ${port}`));
