@@ -1,30 +1,7 @@
 const express = require("express");
 const http = require("http");
 const socketIO = require("socket.io");
-
-// Connection string of MongoDb database hosted on Mlab or locally
-var connection_string = "**********";
-// will use db once we have mLab setup
-//const db = require("monk")(connection_string);
-
-
-// password is "admin"
-const mongoose = require('mongoose')
-const {MONGOURI} = require('./keys')
-
-mongoose.connect(MONGOURI, {
-  useNewUrlParser:true,
-  useUnifiedTopology: true
-})
-
-mongoose.connection.on('connected',()=>{
-  console.log("Successfully connected to MongoDB!")
-})
-
-mongoose.connection.on('error',(err)=>{
-  console.log("Error connecting to MongoDB",err)
-})
-
+const MongoClient = require('mongodb').MongoClient;
 
 const app = express();
 const server = http.createServer(app);
@@ -34,26 +11,60 @@ const router = require('./router/router');
 
 // serve static build files to clients
 app.use(router);
-// our server instance
+
+async function updateGameState(newState){
+  const uri = "mongodb+srv://admin:admin@cluster0.pqlmw.mongodb.net/gameState?retryWrites=true&w=majority";
+  const client = new MongoClient(uri, { useNewUrlParser: true, useUnifiedTopology: true });
+  try {
+      await client.connect();
+      const result = await client.db("mydb").collection("gameState")
+        .updateOne({name:"PrimaryGameState"}, {$set:{started:newState}});
+  } catch (e) {
+      console.error(e);
+  } finally {
+      await client.close();
+  }
+}
+
+async function retrieveGameState(){
+  const uri = "mongodb+srv://admin:admin@cluster0.pqlmw.mongodb.net/gameState?retryWrites=true&w=majority";
+  const client = new MongoClient(uri, { useNewUrlParser: true, useUnifiedTopology: true });
+  try {
+      await client.connect();
+      const result = await client.db("mydb").collection("gameState")
+        .findOne({name:"PrimaryGameState"});
+      if(result)
+      {
+        return result.started;
+      }
+  } catch (e) {
+      console.error(e);
+  } finally {
+      await client.close();
+  }
+}
 
 // This creates our socket using the instance of the server
-
 io.on("connection", socket => {
-  console.log("New client connected" + socket.id);
-  // initial data can be used to send state to new clients - doesn't do anything yet because we don't save state on the server
-  socket.on("initial_data", (msg) => {
-    console.log("testing 1, 2, 3");
-    console.log('message' + msg);
-    });
-  // start_game is called when button is pressed
-  socket.on("change_game_state", (started) => {
-      console.log("change_game_state");
+    console.log("New client connected" + socket.id);
+
+    // initial_data can be used to send state to new clients
+    socket.on("initial_data", () => {
+      console.log("Initial state");
+      var state = retrieveGameState();
+      io.sockets.emit("get_data", state);
+    })
+
+    // change_game_state is called when button is pressed
+    socket.on("change_game_state", (started) => {
+      console.log("Change state");
+      updateGameState(started).catch(console.error);
       io.sockets.emit("get_data", started);
+    });
   });
-});
 
 // our localhost port - I think we need an env file to deploy
 const port = process.env.PORT || 3001;
 
 // setup listener on port 3001
-server.listen(port, () => console.log(`Listening on port ${port}`));
+server.listen(port, () => console.log(`Listening on port ${port}`))
