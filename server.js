@@ -13,7 +13,7 @@ const router = require('./router/router');
 app.use(router);
 
 async function updateGameState(newState){
-  const uri = "mongodb+srv://admin:admin@cluster0.pqlmw.mongodb.net/gameState?retryWrites=true&w=majority";
+  const uri = "##########################";
   const client = new MongoClient(uri, { useNewUrlParser: true, useUnifiedTopology: true });
   try {
       await client.connect();
