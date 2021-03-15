@@ -6,6 +6,7 @@ const MongoClient = require('mongodb').MongoClient;
 const app = express();
 const server = http.createServer(app);
 const io = socketIO(server);
+const uri = process.env.DB_URI;
 
 const router = require('./router/router');
 
@@ -13,7 +14,6 @@ const router = require('./router/router');
 app.use(router);
 
 async function updateGameState(newState){
-  const uri = process.env.DB_URI;
   const client = new MongoClient(uri, { useNewUrlParser: true, useUnifiedTopology: true });
   try {
       await client.connect();
@@ -27,7 +27,6 @@ async function updateGameState(newState){
 }
 
 async function retrieveGameState(){
-  const uri = process.env.DB_URI;
   const client = new MongoClient(uri, { useNewUrlParser: true, useUnifiedTopology: true });
   try {
       await client.connect();
@@ -51,8 +50,8 @@ io.on("connection", socket => {
     // initial_data can be used to send state to new clients
     socket.on("initial_data", () => {
       console.log("Initial state");
-      var state = retrieveGameState();
-      io.sockets.emit("get_data", state);
+      retrieveGameState().then(
+        state => {io.sockets.emit("get_data", state)});
     })
 
     // change_game_state is called when button is pressed
