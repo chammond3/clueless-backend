@@ -13,7 +13,7 @@ const router = require('./router/router');
 app.use(router);
 
 async function updateGameState(newState){
-  const uri = "##########################";
+  const uri = process.env.DB_URI;
   const client = new MongoClient(uri, { useNewUrlParser: true, useUnifiedTopology: true });
   try {
       await client.connect();
@@ -27,7 +27,7 @@ async function updateGameState(newState){
 }
 
 async function retrieveGameState(){
-  const uri = "##########################";
+  const uri = process.env.DB_URI;
   const client = new MongoClient(uri, { useNewUrlParser: true, useUnifiedTopology: true });
   try {
       await client.connect();
