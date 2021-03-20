@@ -13,7 +13,8 @@ const router = require('./router/router');
 // serve static build files to clients
 app.use(router);
 
-async function updateGameState(newState){
+//Update game started state on database
+async function updateGameStarted(newState){
   const client = new MongoClient(uri, { useNewUrlParser: true, useUnifiedTopology: true });
   try {
       await client.connect();
@@ -26,6 +27,21 @@ async function updateGameState(newState){
   }
 }
 
+//Update server message on database
+async function updateMessage(newMessage){
+  const client = new MongoClient(uri, { useNewUrlParser: true, useUnifiedTopology: true });
+  try {
+      await client.connect();
+      const result = await client.db("mydb").collection("gameState")
+        .updateOne({name:"PrimaryGameState"}, {$set:{message:newMessage}});
+  } catch (e) {
+      console.error(e);
+  } finally {
+      await client.close();
+  }
+}
+
+//Retrieve all game state from database for new client
 async function retrieveGameState(){
   const client = new MongoClient(uri, { useNewUrlParser: true, useUnifiedTopology: true });
   try {
@@ -34,7 +50,7 @@ async function retrieveGameState(){
         .findOne({name:"PrimaryGameState"});
       if(result)
       {
-        return result.started;
+        return {started: result.started, serverMessage: result.message};
       }
   } catch (e) {
       console.error(e);
@@ -54,12 +70,19 @@ io.on("connection", socket => {
         state => {io.sockets.emit("get_data", state)});
     })
 
-    // change_game_state is called when button is pressed
+    // change_game_state is called when start game/reset state button is pressed
     socket.on("change_game_state", (started) => {
       console.log("Change state");
-      updateGameState(started).catch(console.error);
-      io.sockets.emit("get_data", started);
+      updateGameStarted(started).catch(console.error);
+      io.sockets.emit("get_started", started);
     });
+
+    // change_message is called when "send message" button is pressed
+    socket.on("change_message", (message) => {
+      console.log("Change message");
+      updateMessage(message).catch(console.error);
+      io.sockets.emit("get_message", message);
+    })
   });
 
 // our localhost port - I think we need an env file to deploy
