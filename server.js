@@ -289,6 +289,7 @@ const E_CARDS = {
 
 const E_TURNACTIONS = {
   MOVE: "move",
+  SUGGEST: "suggest",
   ACCUSE: "accuse",
   REFUTE: "refute"
 }
@@ -311,6 +312,7 @@ serverCharacters = null;
 dealTo = 0;
 turnOrder = new Array;
 currentTurn = 0;
+refuteCounter = 0;
 currentTurnAction = E_TURNACTIONS.MOVE;
 
 murderer = "";
@@ -373,20 +375,63 @@ function getNextTurnCharacter(){
     let nextTurn = currentTurn + 1;
     if(nextTurn >= turnOrder.length){
       currentTurn = 0;
-      return turnOrder[0];
+      return turnOrder[currentTurn];
     }
     else{
       currentTurn = nextTurn;
-      return turnOrder[nextTurn];
+      return turnOrder[currentTurn];
     }
+}
+
+function getCurrentTurnCharacter(){
+  return turnOrder[currentTurn];
 }
 
 //Return next turn action (currently only returns "move")
 function getNextTurnAction(){
-
-    //TODO: Implement suggestions/accusations
-
-    return E_TURNACTIONS.MOVE;
+  let nextRefute = 0;
+  switch(currentTurnAction)
+  {
+    case E_TURNACTIONS.MOVE:
+      serverCharacters.find((currentCharacter, index) => {
+        if (currentCharacter.name === getCurrentTurnCharacter()) {
+          currentCharacterActual = serverCharacters[index];
+          return true;
+        }
+        return false;
+      });
+      if (currentCharacterActual.location.type === "hallway") 
+      {
+        currentTurnAction = E_TURNACTIONS.ACCUSE;
+        break;
+      }
+      else
+      {
+        currentTurnAction = E_TURNACTIONS.SUGGEST;
+        break;
+      }
+    case E_TURNACTIONS.SUGGEST:
+      refuteCache = currentTurn;
+      currentTurnAction = E_TURNACTIONS.REFUTE;
+      break;
+    case E_TURNACTIONS.ACCUSE:
+      console.log("accuse to move");
+      currentTurnAction = E_TURNACTIONS.MOVE;
+      break;
+    case E_TURNACTIONS.REFUTE:
+      console.log(refuteCache);
+      console.log(currentTurn);
+      if(refuteCache === currentTurn)
+      {
+        currentTurnAction = E_TURNACTIONS.ACCUSE;
+        break;
+      }
+      else
+      {
+        currentTurnAction = E_TURNACTIONS.REFUTE;
+        break;
+      }
+  }
 }
 
 function cardSetup(){
@@ -400,15 +445,15 @@ function cardSetup(){
    {
       if(E_CARDS[item].number === charCardIndices[0] && E_CARDS[item].type === "character")
       {
-        murderer = item;
+        murderer = E_CARDS[item].name;
       }
       if(E_CARDS[item].number === roomCardIndices[0] && E_CARDS[item].type === "room")
       {
-        murderLocation = item;
+        murderLocation = E_CARDS[item].name;
       }
       if(E_CARDS[item].number === weaponCardIndices[0] && E_CARDS[item].type === "weapon")
       {
-        murderWeapon = item;
+        murderWeapon = E_CARDS[item].name;
       }
    }
    for(let item in E_CARDS)
@@ -466,8 +511,18 @@ io.on("connection", socket => {
       {
         serverCharacters = state.characters;
       }
+
+      let newMessage = "";
+      if(getCurrentTurnCharacter() == null)
+      {
+        newMessage = "No characters in turn order yet";
+      }
+      else
+      {
+        newMessage = getCurrentTurnCharacter() + " to " + currentTurnAction;
+      }
       io.sockets.emit("updateCharacters", serverCharacters)
-      io.sockets.emit("turnChange", turnOrder[currentTurn], currentTurnAction);
+      io.sockets.emit("turnChange", getCurrentTurnCharacter(), currentTurnAction, newMessage);
 
       //TODO: Add database retrieval 
 
@@ -478,19 +533,121 @@ io.on("connection", socket => {
     socket.on("startGame", (state) => {
       console.log("Start game pressed");
       cardSetup();
+      console.log(murderer + " " + murderLocation + " " + murderWeapon);
     })
 
     // playerMove is called when someone moves
     socket.on("playerMove", (characters) => {
       console.log("Player moved");
       serverCharacters = characters;
-
+      console.log(serverCharacters);
       // TODO: Add database update
+      
+      getNextTurnAction();
+      let newMessage = getCurrentTurnCharacter() + " to " + currentTurnAction;
 
       io.sockets.emit("updateCharacters", serverCharacters);
-      io.sockets.emit("turnChange", getNextTurnCharacter(), getNextTurnAction());
+      io.sockets.emit("turnChange", getCurrentTurnCharacter(), currentTurnAction, newMessage);
     });
 
+    // endTurn is called when someone ends their turn (without)
+    socket.on("endTurn", () => {
+      console.log("Player ended turn");
+
+      // TODO: Add database update
+      
+      currentTurnAction = E_TURNACTIONS.MOVE;
+      let nextCharacter = getNextTurnCharacter();
+      let newMessage = nextCharacter + " to " + currentTurnAction;
+
+      io.sockets.emit("turnChange", nextCharacter, currentTurnAction, newMessage);
+    });
+
+    // playerAccuse is called when someone accuses
+    socket.on("playerAccuse", (character, characterLocation, weapon) => {
+      console.log("Player accused");
+
+      // TODO: Add database update
+      console.log(character);
+      console.log(characterLocation);
+      console.log(weapon);
+      console.log(murderer);
+      console.log(murderLocation);
+      console.log(murderWeapon);
+
+      if(character === murderer && characterLocation === murderLocation && weapon === murderWeapon)
+      {
+        let newMessage = "Correct accusation! " + getCurrentTurnCharacter() + " wins. " + murderer + " did it in the " + murderLocation + " with the " + murderWeapon;
+        io.sockets.emit("turnChange", null, null, newMessage);
+      }
+      else
+      {
+        let newMessage = "Failed accusation! " + getCurrentTurnCharacter() + " is eliminated. ";
+        // TODO: REMOVE PLAYER FROM TURN ORDER
+        currentTurnAction = E_TURNACTIONS.MOVE;
+        let nextCharacter = getNextTurnCharacter();
+        newMessage = newMessage + nextCharacter + " to " + currentTurnAction;
+        io.sockets.emit("turnChange", nextCharacter, currentTurnAction, newMessage);
+      }
+    });
+
+    // playerSuggest is called when someone suggests
+    socket.on("playerSuggest", (character, characterLocation, weapon) => {
+      console.log("Player suggested");
+
+      // TODO: Add database update
+      
+      serverCharacters.find((movedCharacter, index) => {
+        if (movedCharacter.name === character) {
+          const character = serverCharacters[index];
+          character.location = characterLocation;
+          return true;
+        }
+        return false;
+      });
+
+      let newMessage = getCurrentTurnCharacter() + " suggests that " + character + " did it in the " + characterLocation.name + " with the " + weapon;
+
+      getNextTurnAction();
+      let nextCharacter = getNextTurnCharacter();
+
+      newMessage = newMessage + ". " + nextCharacter + " can refute!";
+
+      io.sockets.emit("updateCharacters", serverCharacters);
+      io.sockets.emit("turnChange", nextCharacter, currentTurnAction, newMessage);
+    });
+
+    // refute is called when someone refutes
+    socket.on("refute", (card) => {
+      console.log("Player refuted");
+      let newMessage = "";
+
+      // TODO: Add database update
+      
+      if(card == null)
+      {
+        newMessage = getCurrentTurnCharacter() + " does not refute this suggestion. ";
+      }
+      else
+      {
+        newMessage = getCurrentTurnCharacter() + " refutes and proves that " + card + " was not involved in the murder! ";
+      }
+
+      let nextCharacter = getNextTurnCharacter();
+      getNextTurnAction();
+
+      if(currentTurnAction === E_TURNACTIONS.ACCUSE)
+      {
+        newMessage = newMessage + nextCharacter + " can now accuse!";
+      }
+      else
+      {
+        newMessage = newMessage + nextCharacter + " can now refute!";
+      }
+      
+      io.sockets.emit("turnChange", nextCharacter, currentTurnAction, newMessage);
+    });
+    
     // linkPlayerWithClient is called when someone selects a character
     socket.on("linkPlayerWithClient", (newPlayer) => {
       console.log("Character selected");
@@ -503,7 +660,7 @@ io.on("connection", socket => {
           const character = serverCharacters[index];
           character.taken = true;
           serverCharacters[index] = character;
-          turnOrder.push(character);
+          turnOrder.push(character.name);
           return true;
         }
         return false;
@@ -515,19 +672,20 @@ io.on("connection", socket => {
           const character = serverCharacters[index];
           character.taken = false;
           serverCharacters[index] = character;
-          turnOrder.splice(turnOrder.indexOf(character),1);
+          turnOrder.splice(turnOrder.indexOf(character.name),1);
           return true;
         }
         return false;
       });
 
       //Output turn order for debugging, and update player-client mappping
-      turnOrder.forEach(function(item) {console.log("Turn order: " + item.name)});
+      turnOrder.forEach(function(item) {console.log("Turn order: " + item)});
 
+      let newMessage = getCurrentTurnCharacter() + " to " + currentTurnAction;
       playerClientMap.delete(socket.id);
       playerClientMap.set(socket.id, newPlayer);
       io.sockets.emit("updateCharacters", serverCharacters);
-      io.sockets.emit("turnChange", turnOrder[currentTurn], currentTurnAction);
+      io.sockets.emit("turnChange", turnOrder[currentTurn], currentTurnAction, newMessage);
     });
 
     // disconnect is called when someone disconnects, freeing up their character
@@ -537,7 +695,7 @@ io.on("connection", socket => {
       // TODO: Add database updates
 
       //If disconnecting client had active turn, change turn
-      if(turnOrder.length > 0 && turnOrder[currentTurn].name === playerClientMap.get(socket.id))
+      if(turnOrder.length > 0 && turnOrder[currentTurn] === playerClientMap.get(socket.id))
       {
         io.sockets.emit("turnChange", getNextTurnCharacter(), getNextTurnAction());
       }
@@ -550,7 +708,7 @@ io.on("connection", socket => {
             const character = serverCharacters[index];
             character.taken = false;
             serverCharacters[index] = character;
-            turnOrder.splice(turnOrder.indexOf(character),1);
+            turnOrder.splice(turnOrder.indexOf(character.name),1);
             return true;
           }
           return false;
