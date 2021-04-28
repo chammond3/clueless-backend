@@ -337,6 +337,7 @@ function newGame(){
     turnOrder: new Array,
     currentTurn: 0,
     refuteCounter: 0,
+    refuteCache: "",
     currentTurnAction: E_TURNACTIONS.MOVE,
     murderer: "",
     murderLocation: "",
@@ -410,10 +411,6 @@ function getNextTurnCharacter(gameID){
     }
 }
 
-function getCurrentTurnCharacter(game){
-  return game.turnOrder[game.currentTurn];
-}
-
 //Return next turn action (currently only returns "move")
 function getNextTurnAction(gameID){
 
@@ -441,14 +438,14 @@ function getNextTurnAction(gameID){
         break;
       }
     case E_TURNACTIONS.SUGGEST:
-      refuteCache = game.currentTurn;
+      game.refuteCache = game.currentTurn;
       game.currentTurnAction = E_TURNACTIONS.REFUTE;
       break;
     case E_TURNACTIONS.ACCUSE:
       game.currentTurnAction = E_TURNACTIONS.MOVE;
       break;
     case E_TURNACTIONS.REFUTE:
-      if(refuteCache === game.currentTurn)
+      if(game.refuteCache === game.currentTurn)
       {
         game.currentTurnAction = E_TURNACTIONS.ACCUSE;
         break;
@@ -653,12 +650,18 @@ io.on("connection", socket => {
       else
       {
         let newMessage = "Failed accusation! " + game.turnOrder[game.currentTurn] + " is eliminated. ";
-        // TODO: REMOVE PLAYER FROM TURN ORDER
+
         game.currentTurnAction = E_TURNACTIONS.MOVE;
-        let nextCharacter = getNextTurnCharacter(gameID);
+
+        // REMOVE PLAYER FROM TURN ORDER
+        game.turnOrder.splice(game.currentTurn, 1);
+        let nextCharacter = game.turnOrder[game.currentTurn] // don't update turn index b/c array is shifted one to left
+
         newMessage = newMessage + nextCharacter + " to " + game.currentTurnAction;
         io.sockets.emit("turnChange", nextCharacter, game.currentTurnAction, newMessage, gameID);
       }
+
+      console.log(game);
     });
 
     // playerSuggest is called when someone suggests
@@ -692,34 +695,47 @@ io.on("connection", socket => {
     // refute is called when someone refutes
     socket.on("refute", (card, gameID) => {
       console.log("Player refuted");
-
+    
       const game = getGame(gameID);
+      let nextCharacter = "";
       let newMessage = "";
+      let privateMessage = "" // message to suggester
 
       // TODO: Add database update
       
       if(card == null)
       {
+        // move to next player in turn order
         newMessage = game.turnOrder[game.currentTurn] + " does not refute this suggestion. ";
+        privateMessage = newMessage;
+        nextCharacter = getNextTurnCharacter(gameID);
+        getNextTurnAction(gameID);
       }
       else
       {
-        newMessage = game.turnOrder[game.currentTurn] + " refutes and proves that " + card + " was not involved in the murder! ";
+        // set next turn to suggester
+        game.currentTurn = game.refuteCache;
+        nextCharacter = game.turnOrder[game.currentTurn];
+        // set turn action to accuse
+        game.currentTurnAction = E_TURNACTIONS.ACCUSE;
+
+        privateMessage = game.turnOrder[game.currentTurn] + " refutes and proves that " + card + " was not involved in the murder! ";
       }
 
-      let nextCharacter = getNextTurnCharacter(gameID);
-      getNextTurnAction(gameID);
 
       if(game.currentTurnAction === E_TURNACTIONS.ACCUSE)
       {
         newMessage = newMessage + nextCharacter + " can now accuse!";
+        privateMessage = privateMessage + "You can accuse!"
       }
       else
       {
         newMessage = newMessage + nextCharacter + " can now refute!";
+        privateMessage = privateMessage + nextCharacter + " can now refute!";
       }
       
-      io.sockets.emit("turnChange", nextCharacter, game.currentTurnAction, newMessage, gameID);
+      io.sockets.emit("turnChange", nextCharacter, game.currentTurnAction, newMessage, gameID, privateMessage);
+      // send card only to player accusing
     });
     
     // linkPlayerWithClient is called when someone selects a character
