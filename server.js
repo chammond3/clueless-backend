@@ -348,54 +348,6 @@ function newGame(){
 // serve static build files to clients
 app.use(router);
 
-/*Database functions are currently unused
-//Update game started state on database
-async function updateGameStarted(newState){
-  const client = new MongoClient(uri, { useNewUrlParser: true, useUnifiedTopology: true });
-  try {
-      await client.connect();
-      const result = await client.db("mydb").collection("gameState")
-        .updateOne({name:"PrimaryGameState"}, {$set:{started:newState}});
-  } catch (e) {
-      console.error(e);
-  } finally {
-      await client.close();
-  }
-}
-
-//Update server message on database
-async function updateMessage(newMessage){
-  const client = new MongoClient(uri, { useNewUrlParser: true, useUnifiedTopology: true });
-  try {
-      await client.connect();
-      const result = await client.db("mydb").collection("gameState")
-        .updateOne({name:"PrimaryGameState"}, {$set:{message:newMessage}});
-  } catch (e) {
-      console.error(e);
-  } finally {
-      await client.close();
-  }
-}
-
-//Retrieve all game state from database for new client
-async function retrieveGameState(){
-  const client = new MongoClient(uri, { useNewUrlParser: true, useUnifiedTopology: true });
-  try {
-      await client.connect();
-      const result = await client.db("mydb").collection("gameState")
-        .findOne({name:"PrimaryGameState"});
-      if(result)
-      {
-        return {started: result.started, serverMessage: result.message};
-      }
-  } catch (e) {
-      console.error(e);
-  } finally {
-      await client.close();
-  }
-}
-*/
-
 //Increment turn order to next character, then return that character
 function getNextTurnCharacter(gameID){
     const game = getGame(gameID);
@@ -549,13 +501,6 @@ io.on("connection", socket => {
     socket.on("initialData", (gameID) => {
       console.log("Initial state");
 
-      // If server state isn't set yet, initialize serverCharacters to match client (kind of hacky, can remove after database is incorporated)
-      /*
-      if(serverCharacters == null)
-      {
-        serverCharacters = state.characters;
-      }*/
-
       const game = getGame(gameID);
       console.log(gameID);
 
@@ -571,10 +516,6 @@ io.on("connection", socket => {
       io.sockets.emit("updateCharacters", game.serverCharacters, gameID)
       io.sockets.emit("turnChange", game.turnOrder[game.currentTurn], game.currentTurnAction, newMessage, gameID);
 
-      //TODO: Add database retrieval 
-
-      //retrieveGameState().then(
-      //  state => {io.sockets.emit("get_data", state)});
     })
 
     socket.on("getGames", () => {
@@ -610,7 +551,6 @@ io.on("connection", socket => {
 
       console.log("Player moved");
       game.serverCharacters = characters;
-      // TODO: Add database update
       
       getNextTurnAction(gameID);
       let newMessage = game.turnOrder[game.currentTurn] + " to " + game.currentTurnAction;
@@ -622,8 +562,6 @@ io.on("connection", socket => {
     // endTurn is called when someone ends their turn (without)
     socket.on("endTurn", (gameID) => {
       console.log("Player ended turn");
-
-      // TODO: Add database update
 
       const game = getGame(gameID);
       
@@ -637,8 +575,6 @@ io.on("connection", socket => {
     // playerAccuse is called when someone accuses
     socket.on("playerAccuse", (character, characterLocation, weapon, gameID) => {
       console.log("Player accused");
-
-      // TODO: Add database update
 
       const game = getGame(gameID);
 
@@ -667,8 +603,6 @@ io.on("connection", socket => {
     // playerSuggest is called when someone suggests
     socket.on("playerSuggest", (character, characterLocation, weapon, gameID) => {
       console.log("Player suggested");
-
-      // TODO: Add database update
 
       const game = getGame(gameID);
 
@@ -700,8 +634,6 @@ io.on("connection", socket => {
       let nextCharacter = "";
       let newMessage = "";
       let privateMessage = "" // message to suggester
-
-      // TODO: Add database update
       
       if(card == null)
       {
@@ -742,8 +674,6 @@ io.on("connection", socket => {
     socket.on("linkPlayerWithClient", (newPlayer, gameID) => {
       console.log("Character selected");
       
-      // TODO: Add database updates
-
       // find game
       let game = games.find(game => gameID === game.gameID);
 
@@ -761,37 +691,27 @@ io.on("connection", socket => {
       
       //Set old character to not taken (if there was one)
       game.serverCharacters.find((freeCharacter, index) => {
-        if (freeCharacter.name === playerClientMap.get(socket.id)) {
+        if (freeCharacter.name === game.playerClientMap.get(socket.id)) {
           const character = game.serverCharacters[index];
           character.taken = false;
           game.serverCharacters[index] = character;
-          game.turnOrder.splice(turnOrder.indexOf(character.name),1);
+          game.turnOrder.splice(game.turnOrder.indexOf(character.name),1);
           return true;
         }
         return false;
       });
 
-      playerClientMap.delete(socket.id);
-      playerClientMap.set(socket.id, newPlayer);
-      
+      game.playerClientMap.delete(socket.id);
+      game.playerClientMap.set(socket.id, newPlayer);
+      console.log(game);      
       io.sockets.emit("updateGames", getGameInfo());
-/*
-      //Output turn order for debugging, and update player-client mappping
-      game.turnOrder.forEach(function(item) {console.log("Turn order: " + item)});
 
-      let newMessage = getCurrentTurnCharacter() + " to " + game.currentTurnAction;
-      playerClientMap.delete(socket.id);
-      playerClientMap.set(socket.id, newPlayer);
-      io.sockets.emit("updateCharacters", serverCharacters);
-      io.sockets.emit("turnChange", turnOrder[currentTurn], currentTurnAction, newMessage);*/
     });
 
     // disconnect is called when someone disconnects, freeing up their character
     socket.on('disconnect', () => {
       console.log("Client disconnected " + socket.id);
       
-      // TODO: Add database updates
-
       //If disconnecting client had active turn, change turn
       if(turnOrder.length > 0 && turnOrder[currentTurn] === playerClientMap.get(socket.id))
       {
